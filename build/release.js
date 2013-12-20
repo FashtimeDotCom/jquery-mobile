@@ -1,6 +1,8 @@
-var fs = require( "fs" ),
+var cheerio = require( "cheerio" ),
+	fs = require( "fs" ),
 	scp = require( "scp" ),
 	path = require( "path" ),
+	semver = require( "semver" ),
 	shell = require( "shelljs" );
 
 module.exports = function( Release ) {
@@ -93,13 +95,70 @@ module.exports = function( Release ) {
 			console.log();
 		},
 
+		_cloneWebsiteRepo: function() {
+			var local = Release.dir.base + "/jquerymobile.com",
+				remote = "git@github.com:jquery/jquerymobile.com";
+
+			console.log( "Cloning " + remote.cyan + "..." );
+			Release.git( "clone " + remote + " " + local, "Error cloning website repo." );
+			console.log();
+
+			return local;
+		},
+
+		_updateBuilder: function() {
+			var builder, $, option, newOption,
+				repo = Release._cloneWebsiteRepo(),
+				dest = repo + "/resources/download",
+				src = Release.dir.repo + "/dist/jquery.mobile.images-" + Release.newVersion + ".zip",
+				commitMessage = "Builder: Added version " + Release.newVersion;
+
+			shell.cp( src, dest );
+
+			console.log( "Updating builder page..." );
+			$ = cheerio.load( fs.readFileSync( repo + "/pages/download-builder.html", "utf8" ) );
+
+			if ( Release.preRelease ) {
+				newOption = "<option value='" + Release.newVersion + "'>" + Release.newVersion + "</option>\n\t\t"
+				option = $( "select#branch optgroup[label='Unstable'] option" ).eq( 0 );
+			} else {
+				newOption = "<option value='" + Release.newVersion + "' selected>" + Release.newVersion + "</option>\n\t\t";
+				option = $( "select#branch optgroup[label='Stable'] option[selected]" );
+				if ( semver.gt( Release.newVersion, option.val() ) ) {
+					option.removeAttr( "selected" );
+				}
+			}
+
+			while( option.length
+					&& semver.valid( option.val() )
+					&& semver.lt( Release.newVersion, option.val() ) ) {
+				option = option.next();
+			}
+
+			if ( option.length ) {
+				option.before( newOption );
+			}
+
+			fs.writeFileSync( repo + "/pages/download-builder.html", $.html() );
+
+			console.log( "Adding files..." );
+			process.chdir( repo );
+			Release.git( "add ." , "Error adding files." );
+			Release.git( "commit -m '" + commitMessage + "'" , "Error commiting files." );
+			console.log( "Pushing to github..." );
+			Release.git( "push", "Error pushing demos to github." );
+			console.log();
+		},
+
 		_complete: function( done ) {
 			Release._walk([
 				Release._section( "publishing zip file" ),
 				Release._uploadZipToWebsite,
 				Release._section( "publishing demos" ),
 				Release._uploadDemosToWebsite,
-				Release._publishDemos
+				Release._publishDemos,
+				Release._section( "updating builder" ),
+				Release._updateBuilder
 			], done );
 		},
 
