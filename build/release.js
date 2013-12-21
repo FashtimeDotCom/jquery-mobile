@@ -119,9 +119,12 @@ module.exports = function( Release ) {
 			$ = cheerio.load( fs.readFileSync( repo + "/pages/download-builder.html", "utf8" ) );
 
 			if ( Release.preRelease ) {
+				// If it's a prerelease the option should not be selected
+				// and need to be inserted in the unstable optgroup
 				newOption = "<option value='" + Release.newVersion + "'>" + Release.newVersion + "</option>\n\t\t"
 				option = $( "select#branch optgroup[label='Unstable'] option" ).eq( 0 );
 			} else {
+				// If it's a release the option should be selected and need to be inserted in the stable optgroup
 				newOption = "<option value='" + Release.newVersion + "' selected>" + Release.newVersion + "</option>\n\t\t";
 				option = $( "select#branch optgroup[label='Stable'] option[selected]" );
 				if ( semver.gt( Release.newVersion, option.val() ) ) {
@@ -129,6 +132,7 @@ module.exports = function( Release ) {
 				}
 			}
 
+			// Figure out where to insert the new option
 			while( option.length
 					&& semver.valid( option.val() )
 					&& semver.lt( Release.newVersion, option.val() ) ) {
